@@ -21,7 +21,7 @@
 
 			#top-component {
 				bottom: 20em;
-				margin-bottom: 5px; 
+				margin-bottom: 5px;
 				min-height: 5em;
 			}
 
@@ -34,14 +34,8 @@
 				height: 20em;
 				min-height: 10em;
 			}
-			
-		</style>
 
-		<script>
-			$(function() {
-				$('div.split-pane').splitPane();
-			});
-		</script>
+		</style>
 
 	</head>
 	<body>
@@ -67,5 +61,21 @@
 				</div>
 			</div>
 		</div>
+
+        <script>
+            (function(){
+                var root = document.getElementsByClassName('split-pane')[0];
+                var splitPane = new SplitPane(root);
+                splitPane.bind();
+
+                setTimeout(function(){
+                    console.log('unbinding');
+                    splitPane.unbind();
+                    console.log('binding');
+                    splitPane.bind();
+                }, 10000);
+
+            })()
+        </script>
 	</body>
 </html>

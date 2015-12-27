@@ -1,274 +1,201 @@
 /*!
 
-Split Pane v0.5.1
+ Split Pane v0.5.1 (modified by Mathew Kurian - removed JQuery dep.)
 
-Copyright (c) 2014 Simon Hagström
+ Copyright (c) 2014 Simon Hagström
 
-Released under the MIT license
-https://raw.github.com/shagstrom/split-pane/master/LICENSE
+ Released under the MIT license
+ https://raw.github.com/shagstrom/split-pane/master/LICENSE
 
-*/
-(function($) {
-	
-	$.fn.splitPane = function() {
-		var $splitPanes = this;
-		$splitPanes.each(setMinHeightAndMinWidth);
-		$splitPanes.append('<div class="split-pane-resize-shim">');
-		var eventType = ('ontouchstart' in document) ? 'touchstart' : 'mousedown';
-		$splitPanes.children('.split-pane-divider').html('<div class="split-pane-divider-inner"></div>');
-		$splitPanes.children('.split-pane-divider').bind(eventType, mousedownHandler);
-		setTimeout(function() {
-			// Doing this later because of an issue with Chrome (v23.0.1271.64) returning split-pane width = 0
-			// and triggering multiple resize events when page is being opened from an <a target="_blank"> .
-			$splitPanes.each(function() {
-				$(this).bind('_splitpaneparentresize', createParentresizeHandler($(this)));
-			});
-			$(window).trigger('resize');
-		}, 100);
-	};
+ */
 
-	var SPLITPANERESIZE_HANDLER = '_splitpaneparentresizeHandler';
+function SplitPane(root) {
 
-	/**
-	 * A special event that will "capture" a resize event from the parent split-pane or window.
-	 * The event will NOT propagate to grandchildren.
-	 */
-	$.event.special._splitpaneparentresize = {
-		setup: function(data, namespaces) {
-			var element = this,
-				parent = $(this).parent().closest('.split-pane')[0] || window;
-			$(this).data(SPLITPANERESIZE_HANDLER, function(event) {
-				var target = event.target === document ? window : event.target;
-				if (target === parent) {
-					event.type = "_splitpaneparentresize";
-					$.event.dispatch.apply(element, arguments);
-				} else {
-					event.stopPropagation();
-				}
-			});
-			$(parent).bind('resize', $(this).data(SPLITPANERESIZE_HANDLER));
-		},
-		teardown: function(namespaces) {
-			var parent = $(this).parent().closest('.split-pane')[0] || window;
-			$(parent).unbind('resize', $(this).data(SPLITPANERESIZE_HANDLER));
-			$(this).removeData(SPLITPANERESIZE_HANDLER);
-		}
-	};
+  function getElement(tag, className) {
+    var node = document.createElement(tag);
+    node.className = className;
+    return node;
+  }
 
-	function setMinHeightAndMinWidth() {
-		var $splitPane = $(this),
-			$firstComponent = $splitPane.children('.split-pane-component:first'),
-			$divider = $splitPane.children('.split-pane-divider'),
-			$lastComponent = $splitPane.children('.split-pane-component:last');
-		if ($splitPane.is('.fixed-top, .fixed-bottom, .horizontal-percent')) {
-			$splitPane.css('min-height', (minHeight($firstComponent) + minHeight($lastComponent) + $divider.height()) + 'px');
-		} else {
-			$splitPane.css('min-width', (minWidth($firstComponent) + minWidth($lastComponent) + $divider.width()) + 'px');
-		}
-	}
+  var RESIZE_EVENT = new Event('resize');
 
-	function mousedownHandler(event) {
-		event.preventDefault();
-		var isTouchEvent = event.type.match(/^touch/),
-			moveEvent = isTouchEvent ? 'touchmove' : 'mousemove',
-			endEvent = isTouchEvent? 'touchend' : 'mouseup',
-			$divider = $(this),
-			$splitPane = $divider.parent(),
-			$resizeShim = $divider.siblings('.split-pane-resize-shim');
-		$resizeShim.show();
-		$divider.addClass('dragged');
-		if (isTouchEvent) {
-			$divider.addClass('touch');
-		}
-		var moveEventHandler = createMousemove($splitPane, pageXof(event), pageYof(event));
-		$(document).on(moveEvent, moveEventHandler);
-		$(document).one(endEvent, function(event) {
-			$(document).unbind(moveEvent, moveEventHandler);
-			$divider.removeClass('dragged touch');
-			$resizeShim.hide();
-		});
-	}
+  this.bind = function () {
+    setMinHeightAndMinWidth(root);
+    root.appendChild(getElement('div', 'split-pane-resize-shim'));
+    this.eventType = ('ontouchstart' in document) ? 'touchstart' : 'mousedown';
+    root.querySelector('.split-pane-divider').innerHTML = '<div class="split-pane-divider-inner"></div>';
+    root.querySelector('.split-pane-divider').addEventListener(this.eventType, mousedownHandler);
+    setTimeout(function () {
+      window.dispatchEvent(RESIZE_EVENT);
+    }, 100);
+  };
 
-	function createParentresizeHandler($splitPane) {
-		var splitPane = $splitPane[0],
-			firstComponent = $splitPane.children('.split-pane-component:first')[0],
-			divider = $splitPane.children('.split-pane-divider')[0],
-			lastComponent = $splitPane.children('.split-pane-component:last')[0];
-		if ($splitPane.is('.fixed-top')) {
-			var lastComponentMinHeight = minHeight(lastComponent);
-			return function(event) {
-				var maxfirstComponentHeight = splitPane.offsetHeight - lastComponentMinHeight - divider.offsetHeight;
-				if (firstComponent.offsetHeight > maxfirstComponentHeight) {
-					setTop(firstComponent, divider, lastComponent, maxfirstComponentHeight + 'px');
-				}
-				$splitPane.resize();
-			};
-		} else if ($splitPane.is('.fixed-bottom')) {
-			var firstComponentMinHeight = minHeight(firstComponent);
-			return function(event) {
-				var maxLastComponentHeight = splitPane.offsetHeight - firstComponentMinHeight - divider.offsetHeight;
-				if (lastComponent.offsetHeight > maxLastComponentHeight) {
-					setBottom(firstComponent, divider, lastComponent, maxLastComponentHeight + 'px')
-				}
-				$splitPane.resize();
-			};
-		} else if ($splitPane.is('.horizontal-percent')) {
-			var lastComponentMinHeight = minHeight(lastComponent),
-				firstComponentMinHeight = minHeight(firstComponent);
-			return function(event) {
-				var maxLastComponentHeight = splitPane.offsetHeight - firstComponentMinHeight - divider.offsetHeight;
-				if (lastComponent.offsetHeight > maxLastComponentHeight) {
-					setBottom(firstComponent, divider, lastComponent, (maxLastComponentHeight / splitPane.offsetHeight * 100) + '%');
-				} else {
-					if (splitPane.offsetHeight - firstComponent.offsetHeight - divider.offsetHeight < lastComponentMinHeight) {
-						setBottom(firstComponent, divider, lastComponent, (lastComponentMinHeight / splitPane.offsetHeight * 100) + '%');
-					}
-				}
-				$splitPane.resize();
-			};
-		} else if ($splitPane.is('.fixed-left')) {
-			var lastComponentMinWidth = minWidth(lastComponent);
-			return function(event) {
-				var maxFirstComponentWidth = splitPane.offsetWidth - lastComponentMinWidth - divider.offsetWidth;
-				if (firstComponent.offsetWidth > maxFirstComponentWidth) {
-					setLeft(firstComponent, divider, lastComponent, maxFirstComponentWidth + 'px');
-				}
-				$splitPane.resize();
-			};
-		} else if ($splitPane.is('.fixed-right')) {
-			var firstComponentMinWidth = minWidth(firstComponent);
-			return function(event) {
-				var maxLastComponentWidth = splitPane.offsetWidth - firstComponentMinWidth - divider.offsetWidth;
-				if (lastComponent.offsetWidth > maxLastComponentWidth) {
-					setRight(firstComponent, divider, lastComponent, maxLastComponentWidth + 'px');
-				}
-				$splitPane.resize();
-			};
-		} else if ($splitPane.is('.vertical-percent')) {
-			var lastComponentMinWidth = minWidth(lastComponent),
-				firstComponentMinWidth = minWidth(firstComponent);
-			return function(event) {
-				var maxLastComponentWidth = splitPane.offsetWidth - firstComponentMinWidth - divider.offsetWidth;
-				if (lastComponent.offsetWidth > maxLastComponentWidth) {
-					setRight(firstComponent, divider, lastComponent, (maxLastComponentWidth / splitPane.offsetWidth * 100) + '%');
-				} else {
-					if (splitPane.offsetWidth - firstComponent.offsetWidth - divider.offsetWidth < lastComponentMinWidth) {
-						setRight(firstComponent, divider, lastComponent, (lastComponentMinWidth / splitPane.offsetWidth * 100) + '%');
-					}
-				}
-				$splitPane.resize();
-			};
-		}
-	}
+  this.unbind = function () {
+    root.querySelector('.split-pane-divider').removeEventListener(this.eventType, mousedownHandler);
+  };
 
-	function createMousemove($splitPane, pageX, pageY) {
-		var splitPane = $splitPane[0],
-			firstComponent = $splitPane.children('.split-pane-component:first')[0],
-			divider = $splitPane.children('.split-pane-divider')[0],
-			lastComponent = $splitPane.children('.split-pane-component:last')[0];
-		if ($splitPane.is('.fixed-top')) {
-			var firstComponentMinHeight =  minHeight(firstComponent),
-				maxFirstComponentHeight = splitPane.offsetHeight - minHeight(lastComponent) - divider.offsetHeight,
-				topOffset = divider.offsetTop - pageY;
-			return function(event) {
-				event.preventDefault();
-				var top = Math.min(Math.max(firstComponentMinHeight, topOffset + pageYof(event)), maxFirstComponentHeight);
-				setTop(firstComponent, divider, lastComponent, top + 'px');
-				$splitPane.resize();
-			};
-		} else if ($splitPane.is('.fixed-bottom')) {
-			var lastComponentMinHeight = minHeight(lastComponent),
-				maxLastComponentHeight = splitPane.offsetHeight - minHeight(firstComponent) - divider.offsetHeight,
-				bottomOffset = lastComponent.offsetHeight + pageY;
-			return function(event) {
-				event.preventDefault();
-				var bottom = Math.min(Math.max(lastComponentMinHeight, bottomOffset - pageYof(event)), maxLastComponentHeight);
-				setBottom(firstComponent, divider, lastComponent, bottom + 'px');
-				$splitPane.resize();
-			};
-		} else if ($splitPane.is('.horizontal-percent')) {
-			var splitPaneHeight = splitPane.offsetHeight,
-				lastComponentMinHeight = minHeight(lastComponent),
-				maxLastComponentHeight = splitPaneHeight - minHeight(firstComponent) - divider.offsetHeight,
-				bottomOffset = lastComponent.offsetHeight + pageY;
-			return function(event) {
-				event.preventDefault();
-				var bottom = Math.min(Math.max(lastComponentMinHeight, bottomOffset - pageYof(event)), maxLastComponentHeight);
-				setBottom(firstComponent, divider, lastComponent, (bottom / splitPaneHeight * 100) + '%');
-				$splitPane.resize();
-			};
-		} else if ($splitPane.is('.fixed-left')) {
-			var firstComponentMinWidth = minWidth(firstComponent),
-				maxFirstComponentWidth = splitPane.offsetWidth - minWidth(lastComponent) - divider.offsetWidth,
-				leftOffset = divider.offsetLeft - pageX;
-			return function(event) {
-				event.preventDefault();
-				var left = Math.min(Math.max(firstComponentMinWidth, leftOffset + pageXof(event)), maxFirstComponentWidth);
-				setLeft(firstComponent, divider, lastComponent, left + 'px')
-				$splitPane.resize();
-			};
-		} else if ($splitPane.is('.fixed-right')) {
-			var lastComponentMinWidth = minWidth(lastComponent),
-				maxLastComponentWidth = splitPane.offsetWidth - minWidth(firstComponent) - divider.offsetWidth,
-				rightOffset = lastComponent.offsetWidth + pageX;
-			return function(event) {
-				event.preventDefault();
-				var right = Math.min(Math.max(lastComponentMinWidth, rightOffset - pageXof(event)), maxLastComponentWidth);
-				setRight(firstComponent, divider, lastComponent, right + 'px');
-				$splitPane.resize();
-			};
-		} else if ($splitPane.is('.vertical-percent')) {
-			var splitPaneWidth = splitPane.offsetWidth,
-				lastComponentMinWidth = minWidth(lastComponent),
-				maxLastComponentWidth = splitPaneWidth - minWidth(firstComponent) - divider.offsetWidth,
-				rightOffset = lastComponent.offsetWidth + pageX;
-			return function(event) {
-				event.preventDefault();
-				var right = Math.min(Math.max(lastComponentMinWidth, rightOffset - pageXof(event)), maxLastComponentWidth);
-				setRight(firstComponent, divider, lastComponent, (right / splitPaneWidth * 100) + '%');
-				$splitPane.resize();
-			};
-		}
-	}
+  function setMinHeightAndMinWidth(root) {
+    var splitPane = root,
+      comps = splitPane.querySelectorAll('.split-pane-component');
+    var first = comps[0],
+      div = splitPane.querySelector('.split-pane-divider'),
+      last = comps[1];
+    ;
+    if (containsClass(root, ['fixed-top', 'fixed-bottom', 'horizontal-percent'])) {
+      root.style.minHeight = (minHeight(first) + minHeight(last) + div.offsetHeight) + 'px';
+    } else {
+      root.style.minWidth = (minWidth(first) + minWidth(last) + div.offsetWidth) + 'px';
+    }
+  }
 
-	function pageXof(event) {
-		return event.pageX || event.originalEvent.pageX;
-	}
+  function containsClass(a, b) {
+    for (var i = 0; i < b.length; i++) {
+      if (a.classList.contains(b[i])) {
+        return true;
+      }
+    }
 
-	function pageYof(event) {
-		return event.pageY || event.originalEvent.pageY;
-	}
+    return false;
+  }
 
-	function minHeight(element) {
-		return parseInt($(element).css('min-height')) || 0;
-	}
+  function mousedownHandler(event) {
+    event.preventDefault();
+    var isTouchEvent = event.type.match(/^touch/),
+      moveEvent = isTouchEvent ? 'touchmove' : 'mousemove',
+      endEvent = isTouchEvent ? 'touchend' : 'mouseup',
+      divider = this;
+    var root = divider.parentElement,
+      resizeShim = root.querySelector('.split-pane-resize-shim');
+    resizeShim.style.display = 'block';
+    divider.classList.add('dragged');
+    if (isTouchEvent) {
+      divider.classList.add('touch');
+    }
+    var moveEventHandler = createMousemove(root, pageXof(event), pageYof(event));
+    document.addEventListener(moveEvent, moveEventHandler);
+    document.addEventListener(endEvent, function (event) {
+      document.removeEventListener(moveEvent, moveEventHandler);
+      divider.classList.remove('dragged', 'touch');
+      resizeShim.style.display = 'none';
+    }, false);
+  }
 
-	function minWidth(element) {
-		return parseInt($(element).css('min-width')) || 0;
-	}
+  function createMousemove(root, pageX, pageY) {
+    var splitPane = root,
+      comps = splitPane.querySelectorAll('.split-pane-component');
+    var firstComponent = comps[0],
+      divider = splitPane.querySelector('.split-pane-divider'),
+      lastComponent = comps[1];
+    if (root.classList.contains('fixed-top')) {
+      var firstComponentMinHeight = minHeight(firstComponent),
+        maxFirstComponentHeight = splitPane.offsetHeight - minHeight(lastComponent) - divider.offsetHeight,
+        topOffset = divider.offsetTop - pageY;
+      return function (event) {
+        event.preventDefault();
+        var top = Math.min(Math.max(firstComponentMinHeight, topOffset + pageYof(event)), maxFirstComponentHeight);
+        setTop(firstComponent, divider, lastComponent, top + 'px');
+        root.dispatchEvent(RESIZE_EVENT)
+      };
+    } else if (root.classList.contains('fixed-bottom')) {
+      var lastComponentMinHeight = minHeight(lastComponent),
+        maxLastComponentHeight = splitPane.offsetHeight - minHeight(firstComponent) - divider.offsetHeight,
+        bottomOffset = lastComponent.offsetHeight + pageY;
+      return function (event) {
+        event.preventDefault();
+        var bottom = Math.min(Math.max(lastComponentMinHeight, bottomOffset - pageYof(event)), maxLastComponentHeight);
+        setBottom(firstComponent, divider, lastComponent, bottom + 'px');
+        root.dispatchEvent(RESIZE_EVENT)
+      };
+    } else if (root.classList.contains('horizontal-percent')) {
+      var splitPaneHeight = splitPane.offsetHeight,
+        lastComponentMinHeight = minHeight(lastComponent),
+        maxLastComponentHeight = splitPaneHeight - minHeight(firstComponent) - divider.offsetHeight,
+        bottomOffset = lastComponent.offsetHeight + pageY;
+      return function (event) {
+        event.preventDefault();
+        var bottom = Math.min(Math.max(lastComponentMinHeight, bottomOffset - pageYof(event)), maxLastComponentHeight);
+        setBottom(firstComponent, divider, lastComponent, (bottom / splitPaneHeight * 100) + '%');
+        root.dispatchEvent(RESIZE_EVENT)
+      };
+    } else if (root.classList.contains('fixed-left')) {
+      var firstComponentMinWidth = minWidth(firstComponent),
+        maxFirstComponentWidth = splitPane.offsetWidth - minWidth(lastComponent) - divider.offsetWidth,
+        leftOffset = divider.offsetLeft - pageX;
+      return function (event) {
+        event.preventDefault();
+        var left = Math.min(Math.max(firstComponentMinWidth, leftOffset + pageXof(event)), maxFirstComponentWidth);
+        setLeft(firstComponent, divider, lastComponent, left + 'px')
+        root.dispatchEvent(RESIZE_EVENT)
+      };
+    } else if (root.classList.contains('fixed-right')) {
+      var lastComponentMinWidth = minWidth(lastComponent),
+        maxLastComponentWidth = splitPane.offsetWidth - minWidth(firstComponent) - divider.offsetWidth,
+        rightOffset = lastComponent.offsetWidth + pageX;
+      return function (event) {
+        event.preventDefault();
+        var right = Math.min(Math.max(lastComponentMinWidth, rightOffset - pageXof(event)), maxLastComponentWidth);
+        setRight(firstComponent, divider, lastComponent, right + 'px');
+        root.dispatchEvent(RESIZE_EVENT)
+      };
+    } else if (root.classList.contains('vertical-percent')) {
+      var splitPaneWidth = splitPane.offsetWidth,
+        lastComponentMinWidth = minWidth(lastComponent),
+        maxLastComponentWidth = splitPaneWidth - minWidth(firstComponent) - divider.offsetWidth,
+        rightOffset = lastComponent.offsetWidth + pageX;
+      return function (event) {
+        event.preventDefault();
+        var right = Math.min(Math.max(lastComponentMinWidth, rightOffset - pageXof(event)), maxLastComponentWidth);
+        setRight(firstComponent, divider, lastComponent, (right / splitPaneWidth * 100) + '%');
+        root.dispatchEvent(RESIZE_EVENT)
+      };
+    }
+  }
 
-	function setTop(firstComponent, divider, lastComponent, top) {
-		firstComponent.style.height = top;
-		divider.style.top = top;
-		lastComponent.style.top = top;
-	}
+  function pageXof(event) {
+    return event.pageX || event.originalEvent.pageX;
+  }
 
-	function setBottom(firstComponent, divider, lastComponent, bottom) {
-		firstComponent.style.bottom = bottom;
-		divider.style.bottom = bottom;
-		lastComponent.style.height = bottom;
-	}
+  function pageYof(event) {
+    return event.pageY || event.originalEvent.pageY;
+  }
 
-	function setLeft(firstComponent, divider, lastComponent, left) {
-		firstComponent.style.width = left;
-		divider.style.left = left;
-		lastComponent.style.left = left;
-	}
+  function minHeight(element) {
+    return parseInt((element.get ? element.get(0) : element).style.minHeight) || 0;
+  }
 
-	function setRight(firstComponent, divider, lastComponent, right) {
-		firstComponent.style.right = right;
-		divider.style.right = right;
-		lastComponent.style.width = right;
-	}
+  function minWidth(element) {
+    return parseInt((element.get ? element.get(0) : element).style.minWidth) || 0;
+  }
 
-})(jQuery);
+  function setTop(firstComponent, divider, lastComponent, top) {
+    firstComponent.style.height = top;
+    divider.style.top = top;
+    lastComponent.style.top = top;
+  }
+
+  function setBottom(firstComponent, divider, lastComponent, bottom) {
+    firstComponent.style.bottom = bottom;
+    divider.style.bottom = bottom;
+    lastComponent.style.height = bottom;
+  }
+
+  function setLeft(firstComponent, divider, lastComponent, left) {
+    firstComponent.style.width = left;
+    divider.style.left = left;
+    lastComponent.style.left = left;
+  }
+
+  function setRight(firstComponent, divider, lastComponent, right) {
+    firstComponent.style.right = right;
+    divider.style.right = right;
+    lastComponent.style.width = right;
+  }
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = SplitPane;
+}
+
+if (typeof exports !== 'undefined') {
+  exports = SplitPane;
+}
